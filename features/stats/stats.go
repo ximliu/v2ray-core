@@ -2,7 +2,10 @@ package stats
 
 //go:generate errorgen
 
-import "v2ray.com/core/features"
+import (
+	"net"
+	"v2ray.com/core/features"
+)
 
 // Counter is the interface for stats counters.
 //
@@ -16,6 +19,13 @@ type Counter interface {
 	Add(int64) int64
 }
 
+type IPStorager interface {
+	Add(net.IP) bool
+	Empty()
+	Remove(net.IP) bool
+	All() []net.IP
+}
+
 // Manager is the interface for stats manager.
 //
 // v2ray:api:stable
@@ -26,6 +36,10 @@ type Manager interface {
 	RegisterCounter(string) (Counter, error)
 	// GetCounter returns a counter by its identifier.
 	GetCounter(string) Counter
+
+	RegisterIPStorager(string) (IPStorager, error)
+	GetIPStorager(string) IPStorager
+
 }
 
 // GetOrRegisterCounter tries to get the StatCounter first. If not exist, it then tries to create a new counter.
@@ -36,6 +50,15 @@ func GetOrRegisterCounter(m Manager, name string) (Counter, error) {
 	}
 
 	return m.RegisterCounter(name)
+}
+
+func GetOrRegisterIPStorager(m Manager, name string) (IPStorager, error) {
+	ipStorager := m.GetIPStorager(name)
+	if ipStorager != nil {
+		return ipStorager, nil
+	}
+
+	return m.RegisterIPStorager(name)
 }
 
 // ManagerType returns the type of Manager interface. Can be used to implement common.HasType.
@@ -60,6 +83,14 @@ func (NoopManager) RegisterCounter(string) (Counter, error) {
 
 // GetCounter implements Manager.
 func (NoopManager) GetCounter(string) Counter {
+	return nil
+}
+
+func (NoopManager) RegisterIPStorager(string) (IPStorager, error) {
+	return nil, newError("not implemented")
+}
+
+func (NoopManager) GetIPStorager(string) IPStorager {
 	return nil
 }
 
