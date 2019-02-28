@@ -1,12 +1,12 @@
 // +build !windows
+// +build !confonly
 
 package tls
 
 import (
+	"bytes"
 	"crypto/x509"
 	"sync"
-
-	"v2ray.com/core/common/compare"
 )
 
 type certPoolCache struct {
@@ -18,7 +18,7 @@ type certPoolCache struct {
 
 func (c *certPoolCache) hasCert(cert []byte) bool {
 	for _, xCert := range c.extraCerts {
-		if compare.BytesEqual(xCert, cert) {
+		if bytes.Equal(xCert, cert) {
 			return true
 		}
 	}

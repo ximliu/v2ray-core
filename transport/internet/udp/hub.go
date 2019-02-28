@@ -1,22 +1,19 @@
 package udp
 
 import (
+	"context"
+
 	"v2ray.com/core/common/buf"
 	"v2ray.com/core/common/net"
+	"v2ray.com/core/common/protocol/udp"
+	"v2ray.com/core/transport/internet"
 )
-
-// Payload represents a single UDP payload.
-type Payload struct {
-	Content             *buf.Buffer
-	Source              net.Destination
-	OriginalDestination net.Destination
-}
 
 type HubOption func(h *Hub)
 
-func HubCapacity(cap int) HubOption {
+func HubCapacity(capacity int) HubOption {
 	return func(h *Hub) {
-		h.capacity = cap
+		h.capacity = capacity
 	}
 }
 
@@ -28,22 +25,13 @@ func HubReceiveOriginalDestination(r bool) HubOption {
 
 type Hub struct {
 	conn         *net.UDPConn
-	cache        chan *Payload
+	cache        chan *udp.Packet
 	capacity     int
 	recvOrigDest bool
 }
 
-func ListenUDP(address net.Address, port net.Port, options ...HubOption) (*Hub, error) {
-	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{
-		IP:   address.IP(),
-		Port: int(port),
-	})
-	if err != nil {
-		return nil, err
-	}
-	newError("listening UDP on ", address, ":", port).WriteToLog()
+func ListenUDP(ctx context.Context, address net.Address, port net.Port, streamSettings *internet.MemoryStreamConfig, options ...HubOption) (*Hub, error) {
 	hub := &Hub{
-		conn:         udpConn,
 		capacity:     256,
 		recvOrigDest: false,
 	}
@@ -51,22 +39,24 @@ func ListenUDP(address net.Address, port net.Port, options ...HubOption) (*Hub, 
 		opt(hub)
 	}
 
-	hub.cache = make(chan *Payload, hub.capacity)
-
-	if hub.recvOrigDest {
-		rawConn, err := udpConn.SyscallConn()
-		if err != nil {
-			return nil, newError("failed to get fd").Base(err)
-		}
-		err = rawConn.Control(func(fd uintptr) {
-			if err := SetOriginalDestOptions(int(fd)); err != nil {
-				newError("failed to set socket options").Base(err).WriteToLog()
-			}
-		})
-		if err != nil {
-			return nil, newError("failed to control socket").Base(err)
-		}
+	var sockopt *internet.SocketConfig
+	if streamSettings != nil {
+		sockopt = streamSettings.SocketSettings
 	}
+	if sockopt != nil && sockopt.ReceiveOriginalDestAddress {
+		hub.recvOrigDest = true
+	}
+
+	udpConn, err := internet.ListenSystemPacket(ctx, &net.UDPAddr{
+		IP:   address.IP(),
+		Port: int(port),
+	}, sockopt)
+	if err != nil {
+		return nil, err
+	}
+	newError("listening UDP on ", address, ":", port).WriteToLog()
+	hub.conn = udpConn.(*net.UDPConn)
+	hub.cache = make(chan *udp.Packet, hub.capacity)
 
 	go hub.start()
 	return hub, nil
@@ -95,27 +85,29 @@ func (h *Hub) start() {
 		buffer := buf.New()
 		var noob int
 		var addr *net.UDPAddr
-		err := buffer.AppendSupplier(func(b []byte) (int, error) {
-			n, nb, _, a, e := ReadUDPMsg(h.conn, b, oobBytes)
-			noob = nb
-			addr = a
-			return n, e
-		})
+		rawBytes := buffer.Extend(buf.Size)
 
+		n, noob, _, addr, err := ReadUDPMsg(h.conn, rawBytes, oobBytes)
 		if err != nil {
 			newError("failed to read UDP msg").Base(err).WriteToLog()
 			buffer.Release()
 			break
 		}
+		buffer.Resize(0, int32(n))
 
-		payload := &Payload{
-			Content: buffer,
+		if buffer.IsEmpty() {
+			buffer.Release()
+			continue
+		}
+
+		payload := &udp.Packet{
+			Payload: buffer,
 			Source:  net.UDPDestination(net.IPAddress(addr.IP), net.Port(addr.Port)),
 		}
 		if h.recvOrigDest && noob > 0 {
-			payload.OriginalDestination = RetrieveOriginalDest(oobBytes[:noob])
-			if payload.OriginalDestination.IsValid() {
-				newError("UDP original destination: ", payload.OriginalDestination).AtDebug().WriteToLog()
+			payload.Target = RetrieveOriginalDest(oobBytes[:noob])
+			if payload.Target.IsValid() {
+				newError("UDP original destination: ", payload.Target).AtDebug().WriteToLog()
 			} else {
 				newError("failed to read UDP original destination").WriteToLog()
 			}
@@ -124,6 +116,8 @@ func (h *Hub) start() {
 		select {
 		case c <- payload:
 		default:
+			buffer.Release()
+			payload.Payload = nil
 		}
 
 	}
@@ -134,6 +128,6 @@ func (h *Hub) Addr() net.Addr {
 	return h.conn.LocalAddr()
 }
 
-func (h *Hub) Receive() <-chan *Payload {
+func (h *Hub) Receive() <-chan *udp.Packet {
 	return h.cache
 }

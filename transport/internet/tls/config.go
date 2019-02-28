@@ -1,7 +1,8 @@
+// +build !confonly
+
 package tls
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"sync"
@@ -140,6 +141,10 @@ func getGetCertificateFunc(c *tls.Config, ca []*Certificate) func(hello *tls.Cli
 	}
 }
 
+func (c *Config) IsExperiment8357() bool {
+	return c.ServerName == "experiment:8357"
+}
+
 // GetTLSConfig converts this Config into tls.Config.
 func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 	config := &tls.Config{
@@ -155,7 +160,7 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 		opt(config)
 	}
 
-	if c.AllowInsecureCiphers && len(config.CipherSuites) == 0 {
+	if !c.AllowInsecureCiphers && len(config.CipherSuites) == 0 {
 		config.CipherSuites = []uint16{
 			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
 			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
@@ -181,7 +186,7 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 		config.GetCertificate = getGetCertificateFunc(config, caCerts)
 	}
 
-	if len(c.ServerName) > 0 {
+	if len(c.ServerName) > 0 && c.ServerName != "experiment:8357" {
 		config.ServerName = c.ServerName
 	}
 	if len(c.NextProtocol) > 0 {
@@ -215,13 +220,12 @@ func WithNextProto(protocol ...string) Option {
 	}
 }
 
-// ConfigFromContext fetches Config from context. Nil if not found.
-func ConfigFromContext(ctx context.Context) *Config {
-	securitySettings := internet.SecuritySettingsFromContext(ctx)
-	if securitySettings == nil {
+// ConfigFromStreamSettings fetches Config from stream settings. Nil if not found.
+func ConfigFromStreamSettings(settings *internet.MemoryStreamConfig) *Config {
+	if settings == nil {
 		return nil
 	}
-	config, ok := securitySettings.(*Config)
+	config, ok := settings.SecuritySettings.(*Config)
 	if !ok {
 		return nil
 	}
