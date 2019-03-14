@@ -33,17 +33,33 @@ func init() {
 	}
 }
 
-// Alloc returns a byte slice with at least the given size. Minimum size of returned slice is 2048.
-func Alloc(size int32) []byte {
+// GetPool returns a sync.Pool that generates bytes array with at least the given size.
+// It may return nil if no such pool exists.
+//
+// v2ray:api:stable
+func GetPool(size int32) *sync.Pool {
 	for idx, ps := range poolSize {
 		if size <= ps {
-			return pool[idx].Get().([]byte)
+			return &pool[idx]
 		}
+	}
+	return nil
+}
+
+// Alloc returns a byte slice with at least the given size. Minimum size of returned slice is 2048.
+//
+// v2ray:api:stable
+func Alloc(size int32) []byte {
+	pool := GetPool(size)
+	if pool != nil {
+		return pool.Get().([]byte)
 	}
 	return make([]byte, size)
 }
 
 // Free puts a byte slice into the internal pool.
+//
+// v2ray:api:stable
 func Free(b []byte) {
 	size := int32(cap(b))
 	b = b[0:cap(b)]
