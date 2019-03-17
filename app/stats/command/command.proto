@@ -31,9 +31,15 @@ message QueryStatsResponse {
   repeated Stat stat = 1;
 }
 
+message GetUserIPStatsResponse {
+  string name = 1;
+  string value = 2;
+}
+
 service StatsService {
   rpc GetStats(GetStatsRequest) returns (GetStatsResponse) {}
   rpc QueryStats(QueryStatsRequest) returns (QueryStatsResponse) {}
+  rpc GetUserIPStats(GetStatsRequest) returns (GetUserIPStatsResponse) {}
 }
 
 message Config {}
