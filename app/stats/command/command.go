@@ -36,9 +36,22 @@ func (s *statsServer) GetStats(ctx context.Context, request *GetStatsRequest) (*
 	} else {
 		value = c.Value()
 	}
+	var allIPs string
+
+	if request.Reset_ {
+		allIPs = c.RemoveAllIPs()
+	} else {
+
+		allIPs = c.GetALLIPs()
+	}
+	if len(allIPs) > 0 {
+		allIPs = request.Name + allIPs
+	} else {
+		allIPs = request.Name
+	}
 	return &GetStatsResponse{
 		Stat: &Stat{
-			Name:  request.Name,
+			Name:  allIPs,
 			Value: value,
 		},
 	}, nil

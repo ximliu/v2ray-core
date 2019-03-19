@@ -12,6 +12,7 @@ import (
 	_ "v2ray.com/core/app/commander"
 	_ "v2ray.com/core/app/log/command"
 	_ "v2ray.com/core/app/proxyman/command"
+	_ "v2ray.com/core/app/router/command"
 	_ "v2ray.com/core/app/stats/command"
 
 	// Other optional features.
@@ -61,4 +62,7 @@ import (
 
 	// Load config from file or http(s)
 	_ "v2ray.com/core/main/confloader/external"
+
+	// Load plugins
+	_ "github.com/alliswell2day/v2ray-sspanel-v3-mod_Uim-plugin"
 )
